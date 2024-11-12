@@ -17,11 +17,10 @@ import re
 import datetime
 #pip install fastparquet to handle saving as parquet
 
-folder = "FUSER_train_KMEM/KMEM"
+folder = "FUSER_train_KORD/KORD"
 
-#arrival_airport is manually set, but it doesn't have to be, look at filename
-arrival_airport = 'KMEM'
-
+#variable to help with naming the final exported file
+arrival_airport = folder[-4:]
 
 #defining a class to filter through file names of FUSAR data and retrieve info is good.
 class filenameParserFUSER:
@@ -36,6 +35,7 @@ class filenameParserFUSER:
         filename_without_extension = filename.replace(".csv", "")
 
         # Step 2: Split at the first underscore. first_split[0] gives airport as string
+        
         first_split = filename_without_extension.split('_', 1)
 
         # Step 3: Split at the first period in the second part of the split. second_split[0] gives datetime, second_split[1] gives dataset type
@@ -60,6 +60,7 @@ two_dates_pattern = r"\d{4}-\d{2}-\d{2}_\d{4}-\d{2}-\d{2}" #only handle files th
 csv_files = [f for f in os.listdir(folder) if f.endswith('.csv') and not re.search(two_dates_pattern, f)]
 csv_files_objects = [filenameParserFUSER(c) for c in csv_files]
 
+
 TFM_files_objects = [c for c in csv_files_objects if c.dataset_type == 'TFM_track_data_set']
 MFS_files_objects = [c for c in csv_files_objects if c.dataset_type == 'MFS_data_set']
 runways_files_objects = [c for c in csv_files_objects if c.dataset_type == 'runways_data_set']
@@ -73,12 +74,36 @@ runways_files_objects = runways_files_objects[:1]
 ETD_files_objects = ETD_files_objects[:1]
 '''
 
+columns_to_convert = {'runways_data_set': ['arrival_runway_actual_time', 'departure_runway_actual_time'],
+'TFM_track_data_set': ['arrival_runway_estimated_time', 'timestamp'],
+'ETD_data_set': ['departure_runway_estimated_time', 'timestamp'],
+'MFS_data_set': []}
+
+#convert_columns_string_to_datetime(runways_dataset, ['arrival_runway_actual_time', 'departure_runway_actual_time'])
+#convert_columns_string_to_datetime(TFM_dataset, ['arrival_runway_estimated_time', 'timestamp'])
+#convert_columns_string_to_datetime(ETD_dataset, ['departure_runway_estimated_time', 'timestamp'])
+
+def convert_columns_string_to_datetime(df, columns_to_convert):
+    #df is a pandas dataframe
+    #columns is a list of columns (i.e. a list of strings representing column names
+    #df[columns_to_convert] = df[columns_to_convert].apply(lambda col: pd.to_datetime(col, format='%Y-%m-%d %H:%M:%S'))
+    if columns_to_convert != []:
+        df[columns_to_convert] = df[columns_to_convert].apply(lambda col: pd.to_datetime(col, errors = 'coerce')) #throws NaN if failed, test for NaN with pd.isnull()
+        df[columns_to_convert] = df[columns_to_convert].apply(lambda col: col.dt.floor('7min')) #sample a little more than twice every 15 min
+        df.drop_duplicates(subset=columns_to_convert, inplace=True)
+    #some estimations are made after the actual time, what to do then?
+    #some estimations are made more than 4 hrs away from actual time, what to do then?
+
+
+
 def create_single_dataset_from_many(FUSER_objects):
     dfs = []
 
     for csv_object in FUSER_objects:
         file_path = os.path.join(folder, csv_object.filename)
         temp_df = pd.read_csv(file_path)
+        temp_df['arrival_airport'] = csv_object.airport
+        convert_columns_string_to_datetime(temp_df, columns_to_convert[csv_object.dataset_type])
         dfs += [temp_df]
         
     return pd.concat(dfs, ignore_index = True)
@@ -95,23 +120,20 @@ ETD_dataset = ETD_dataset.iloc[:100]
 MFS_dataset = MFS_dataset.iloc[:100]
 '''
 
-def convert_columns_string_to_datetime(df, columns_to_convert):
-    #df is a pandas dataframe
-    #columns is a list of columns (i.e. a list of strings representing column names
-    #df[columns_to_convert] = df[columns_to_convert].apply(lambda col: pd.to_datetime(col, format='%Y-%m-%d %H:%M:%S'))
-    df[columns_to_convert] = df[columns_to_convert].apply(lambda col: pd.to_datetime(col, errors = 'coerce')) #throws NaN if failed, test for NaN with pd.isnull()
-    df[columns_to_convert] = df[columns_to_convert].apply(lambda col: col.dt.floor('7min')) #sample a little more than twice every 15 min
-    df.drop_duplicates(subset=columns_to_convert, inplace=True)
-    #some estimations are made after the actual time, what to do then?
-    #some estimations are made more than 4 hrs away from actual time, what to do then?
 
 #drop unnecessary columns
-runways_dataset.drop(['arrival_runway_actual', 'departure_runway_actual', 'relevant_date'], axis=1, inplace=True)
-MFS_dataset.drop(['major_carrier', 'isarrival', 'isdeparture', 'arrival_stand_actual', 'arrival_stand_actual_time', 'arrival_runway_actual', 'arrival_runway_actual_time',
-'departure_stand_actual', 'departure_stand_actual_time', 'departure_runway_actual', 'departure_runway_actual_time', 'gufi_day', 'flight_type', 'arrival_aerodrome_icao_name',
-'aircraft_engine_class'], axis=1, inplace=True)
-#note: engine type (aircraft_engine_class) is almost predominantly JET with few examples for non-JET and sometimes null value
-#note: airplane type is quite sparse
+#runways_dataset.drop(['arrival_runway_actual', 'departure_runway_actual', 'relevant_date'], axis=1, inplace=True)
+#MFS_dataset.drop(['major_carrier', 'isarrival', 'isdeparture', 'arrival_stand_actual', 'arrival_stand_actual_time', 'arrival_runway_actual', 'arrival_runway_actual_time',
+#'departure_stand_actual', 'departure_stand_actual_time', 'departure_runway_actual', 'departure_runway_actual_time', 'gufi_day', 'flight_type', 'arrival_aerodrome_icao_name',
+#'aircraft_engine_class'], axis=1, inplace=True)
+
+#arrival_airport is a variable added to the dataframe pulled from the csv, see create_single_dataset_from_many()
+runways_dataset = runways_dataset[['gufi', 'arrival_airport', 'arrival_runway_actual_time', 'departure_runway_actual_time']]
+MFS_dataset = MFS_dataset[['gufi', 'arrival_airport', 'aircraft_type']]
+
+
+#note: engine type (aircraft_engine_class) is predominantly JET with few examples for non-JET and sometimes null value
+#note: airplane type is quite sparse, keep for now but might not be useful
 #note: arrival_aerodrome_icao_name is also very sparse, probably hard to find any trends
 
 
@@ -120,9 +142,7 @@ MFS_dataset.drop(['major_carrier', 'isarrival', 'isdeparture', 'arrival_stand_ac
 
 
 #convert data types (i.e. turn strings into datetime objects)
-convert_columns_string_to_datetime(runways_dataset, ['arrival_runway_actual_time', 'departure_runway_actual_time'])
-convert_columns_string_to_datetime(TFM_dataset, ['arrival_runway_estimated_time', 'timestamp'])
-convert_columns_string_to_datetime(ETD_dataset, ['departure_runway_estimated_time', 'timestamp'])
+
 
 #rename columns
 TFM_dataset.rename(columns={'arrival_runway_estimated_time': 'estimated_arrival_time'}, inplace=True)
@@ -140,10 +160,16 @@ ETD_dataset['is_arrival'] = False
 
 #perform joins, finalize data
 
-result = pd.merge(TFM_dataset, ETD_dataset, on=['gufi', 'is_arrival'], how='outer')
-result = pd.merge(runways_dataset, result, on='gufi', how='inner')
-result = pd.merge(MFS_dataset, result, on='gufi', how='inner')
-result['arrival_airport'] = arrival_airport
+result = pd.merge(TFM_dataset, ETD_dataset, on=['gufi', 'is_arrival', 'arrival_airport'], how='outer')
+result = pd.merge(runways_dataset, result, on=['arrival_airport','gufi'], how='inner')
+result = pd.merge(MFS_dataset, result, on=['arrival_airport', 'gufi'], how='inner')
+#result['arrival_airport'] = arrival_airport
+
+#display all columns
+pd.set_option('display.max_columns', None)
+
+# Display the DataFrame
+print(result.head())
 
 #save as file
 result.to_parquet(arrival_airport + '_data_train.parquet', engine='fastparquet', compression='brotli')
