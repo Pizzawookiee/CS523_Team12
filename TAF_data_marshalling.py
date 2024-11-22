@@ -260,7 +260,7 @@ dtype_dict = {
     "cloud_type_3": "category"
 }
 
-def parse_taf_entry(entry):
+def parse_taf_entry(entry, base_date):
     if entry == None:
         return []
         
@@ -269,19 +269,8 @@ def parse_taf_entry(entry):
     station_id = station_id_search.group() if station_id_search else None
     
     
-    
-    # DateTime with additional handling for extra characters
-    datetime_match = re.search(r"(\d{4}/\d{2}/\d{2} \d{2}:\d{2})", entry)
-    datetime_parsed = None
-    if datetime_match:
-        date_str = datetime_match.group(1)
-        try:
-            datetime_parsed = datetime.strptime(date_str, "%Y/%m/%d %H:%M")
-        except ValueError as e:
-            print(f"Skipping datetime parsing due to error: {e} in entry: {entry}")
-    
     # Use datetime of TAF report issuance to handle validity period and time changes
-    base_date = datetime_parsed
+    datetime_parsed = base_date
     _, days_in_month = monthrange(base_date.year, base_date.month)
     
     # Validity Period
@@ -538,7 +527,7 @@ txt_filenames = [f for f in os.listdir(folder) if f.endswith('.txt')]
 
 TAF_filename_objects = [filenameParserTAF(f) for f in txt_filenames]
 
-def process_single_dataset(filename):
+def process_single_dataset(filename, datetime):
     #skip already processed files!!!
     
     if any(filename in name for name in os.listdir(".")):    
@@ -624,9 +613,9 @@ def process_single_dataset(filename):
     
     
     
-    ammend_df = pd.DataFrame(sum([parse_taf_entry(block) for block in ammend_blocks], []))
-    correct_df = pd.DataFrame(sum([parse_taf_entry(block) for block in correct_blocks], []))
-    original_df = pd.DataFrame(sum([parse_taf_entry(block) for block in original_blocks], []))
+    ammend_df = pd.DataFrame(sum([parse_taf_entry(block, datetime) for block in ammend_blocks], []))
+    correct_df = pd.DataFrame(sum([parse_taf_entry(block, datetime) for block in correct_blocks], []))
+    original_df = pd.DataFrame(sum([parse_taf_entry(block, datetime) for block in original_blocks], []))
 
     #ammendment needs to be added to stuff
     #correction needs to replace stuff
@@ -643,5 +632,5 @@ def process_single_dataset(filename):
 
 
 for i, o in enumerate(TAF_filename_objects):
-    process_single_dataset(o.filename)
+    process_single_dataset(o.filename, o.time)
     print (o.filename + ' processed. Progress is ' + str(i+1) + '/' + str(len(TAF_filename_objects)))
