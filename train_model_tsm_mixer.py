@@ -423,7 +423,7 @@ def main():
         
         pred = model_tsm.predict(n = 12, series = test_data_target, past_covariates = test_data_past_covariates, future_covariates = test_data_future_covariates)
         pred_df = pd.concat([x.pd_dataframe() for x in pred])
-        
+
         pred_df['airport'] = test_data_target_airport
         
         result = []
@@ -432,7 +432,9 @@ def main():
         # Convert group dataframe to TimeSeries
             
             group_data['Value'] = target_scalers[airport].inverse_transform(pd.DataFrame(group_data['Value']))
-            result += group_data
+            result.append(group_data)
+            
+        result = pd.concat(result)
         
         def reconstruct_ID_from_info(airport, datetime):
             formatted_components = airport + '_' + datetime.strftime('%y%m%d_%H00_%M').split('_')
@@ -452,11 +454,12 @@ def main():
             formatted_components[3] = minute
             return "_".join(formatted_components)
             
-        result['ID'] = result.apply(lambda row: reconstruct_ID_from_info(row['airport'], row['datetime']), axis = 1)
+        #datetime stored as index, so we retrieve it with row.name
+            
+        result['ID'] = result.apply(lambda row: reconstruct_ID_from_info(row['airport'], row.name), axis = 1)
             
         
-        #result = result.drop('airport', axis=1)
-        #result = result.drop('datetime', axis=1)
+        result = result.drop('airport', axis=1)
         
         print(result)
         
