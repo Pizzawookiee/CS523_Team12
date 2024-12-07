@@ -442,11 +442,16 @@ def main():
             minute = int(formatted_components[3])
             day = int(formatted_components[1][-2:])
             
-            #handle wraparound to next day
+            
             if hour == 0:
+                #handle wraparound to next day
                 hour = 21
                 minute = 180
                 day = day - 1
+            elif hour % 4 == 0 and minute == 60:
+                #handle end of 4 hr period
+                hour = hour - 3
+                minute = 180
             else:
                 diff = hour - (hour//4 * 4 + 1)
                 hour = hour - diff
@@ -469,6 +474,15 @@ def main():
         print(result)
         
         result.to_csv("test_tsmixer_output.csv", index=False)
+        
+        reference = pd.read_csv('submission_format.csv/submission_format.csv')
+        reference.drop(['Value'], axis=1, inplace = True)
+        submission = pd.read_csv('test_tsmixer_output.csv')
+        submission['Value'] = submission['Value'].astype(int)
+
+        result = pd.merge(reference, submission, on='ID', how='left') 
+
+        result.to_csv('submission.csv', index=False)
     
 
     
