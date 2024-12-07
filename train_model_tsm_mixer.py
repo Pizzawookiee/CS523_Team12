@@ -440,16 +440,19 @@ def main():
             formatted_components = (airport + '_' + datetime.strftime('%y%m%d_%H00_%M')).split('_')
             hour = int(formatted_components[2][:2])
             minute = int(formatted_components[3])
+            day = int(formatted_components[1][-2:])
             
             #handle wraparound to next day
             if hour == 0:
                 hour = 21
                 minute = 180
+                day = day - 1
             else:
-                diff = hour - (hour//4 + 1)
+                diff = hour - (hour//4 * 4 + 1)
                 hour = hour - diff
                 minute = minute + diff * 60
-                
+            
+            formatted_components[1] = formatted_components[1][:-2] + str(day)
             formatted_components[2] = str(hour).zfill(2) + '00'
             formatted_components[3] = str(minute)
             return "_".join(formatted_components)
