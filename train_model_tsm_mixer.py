@@ -451,7 +451,7 @@ def main():
                 minute = minute + diff * 60
                 
             formatted_components[2] = str(hour).zfill(2) + '00'
-            formatted_components[3] = minute
+            formatted_components[3] = str(minute)
             return "_".join(formatted_components)
             
         #datetime stored as index, so we retrieve it with row.name
