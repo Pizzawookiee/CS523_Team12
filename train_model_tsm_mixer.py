@@ -460,10 +460,12 @@ def main():
             
         
         result = result.drop('airport', axis=1)
+        result['Value'] = result['Value'].clip(lower=0).round()
+        result = result['ID', 'Value']
         
         print(result)
         
-        result.to_csv("test_tsmixer_output.csv")
+        result.to_csv("test_tsmixer_output.csv", index=False)
     
 
     
