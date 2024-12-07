@@ -450,7 +450,7 @@ def main():
                 hour = hour - diff
                 minute = minute + diff * 60
                 
-            formatted_components[2][:2] = hour
+            formatted_components[2] = str(hour).zfill(2) + '00'
             formatted_components[3] = minute
             return "_".join(formatted_components)
             
