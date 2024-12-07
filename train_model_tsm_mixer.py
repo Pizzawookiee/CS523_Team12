@@ -437,7 +437,7 @@ def main():
         result = pd.concat(result)
         
         def reconstruct_ID_from_info(airport, datetime):
-            formatted_components = airport + '_' + datetime.strftime('%y%m%d_%H00_%M').split('_')
+            formatted_components = (airport + '_' + datetime.strftime('%y%m%d_%H00_%M')).split('_')
             hour = int(formatted_components[2][:2])
             minute = int(formatted_components[3])
             
