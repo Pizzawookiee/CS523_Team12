@@ -461,7 +461,7 @@ def main():
         
         result = result.drop('airport', axis=1)
         result['Value'] = result['Value'].clip(lower=0).round()
-        result = result['ID', 'Value']
+        result = result[['ID', 'Value']]
         
         print(result)
         
