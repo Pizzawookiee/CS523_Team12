@@ -448,7 +448,7 @@ def main():
                 hour = 21
                 minute = 180
                 day = day - 1
-            elif hour % 4 == 0 and minute == 60:
+            elif hour % 4 == 0 and minute == 00:
                 #handle end of 4 hr period
                 hour = hour - 3
                 minute = 180
