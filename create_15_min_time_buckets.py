@@ -262,7 +262,7 @@ for a in airports:
                 time = row.arrival_runway_actual_time
                 #print(time)
                
-                #ref_hr = math.floor(time.hour / 4) * 4 + 1
+                #ref_hr = math.floor(time.hour / 4) * 4 + 1 #this method is faulty, fails whenever we are at boundary of month
                 ref_hr = math.floor(time.hour)
                 #print(time, time.hour, ref_hr)
                 

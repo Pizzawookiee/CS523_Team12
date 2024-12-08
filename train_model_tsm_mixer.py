@@ -436,31 +436,29 @@ def main():
             
         result = pd.concat(result)
         
-        def reconstruct_ID_from_info(airport, datetime):
-            formatted_components = (airport + '_' + datetime.strftime('%y%m%d_%H00_%M')).split('_')
-            hour = int(formatted_components[2][:2])
-            minute = int(formatted_components[3])
-            day = int(formatted_components[1][-2:])
+        def reconstruct_ID_from_info(airport, datetime_obj):
+        
+            def format_hour(dt):
+                hour_str = f"{dt.hour:02d}"  # Ensure two digits with leading zero if needed
+                return f"{hour_str}00"  # Add two zeros at the end
+        
+            temp = datetime_obj - datetime.timedelta(hours=4)
+                
+            temp = temp.replace(minute=0, second=0, microsecond=0)
+            
+            while temp.hour % 4 != 0:
+                # If not, increment by 1 hour
+                temp = temp + datetime.timedelta(hours=1)            
+            
+            temp = temp + datetime.timedelta(hours=1)
+            
+            hr = format_hour(temp)
+            mins = math.ceil((time - temp).total_seconds() / 60 / 15) * 15
+                
+            id_val = airport + '_' + temp.strftime('%y-%m-%d') + '_' + hr + '_' + str(mins)
             
             
-            if hour == 0:
-                #handle wraparound to next day
-                hour = 21
-                minute = 180
-                day = day - 1
-            elif hour % 4 == 0 and minute == 00:
-                #handle end of 4 hr period
-                hour = hour - 3
-                minute = 180
-            else:
-                diff = hour - (hour//4 * 4 + 1)
-                hour = hour - diff
-                minute = minute + diff * 60
-            
-            formatted_components[1] = formatted_components[1][:-2] + str(day)
-            formatted_components[2] = str(hour).zfill(2) + '00'
-            formatted_components[3] = str(minute)
-            return "_".join(formatted_components)
+            return id_val
             
         #datetime stored as index, so we retrieve it with row.name
             
