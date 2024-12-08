@@ -453,7 +453,7 @@ def main():
             temp = temp + datetime.timedelta(hours=1)
             
             hr = format_hour(temp)
-            mins = math.ceil((time - temp).total_seconds() / 60 / 15) * 15
+            mins = math.ceil((datetime_obj - temp).total_seconds() / 60 / 15) * 15
                 
             id_val = airport + '_' + temp.strftime('%y-%m-%d') + '_' + hr + '_' + str(mins)
             
