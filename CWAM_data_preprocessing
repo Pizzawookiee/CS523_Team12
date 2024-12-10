@@ -1,0 +1,172 @@
+import os
+import re
+import bz2
+import shutil
+import h5py
+import pandas as pd
+import numpy as np
+from fastparquet import write
+from datetime import datetime
+import pytz
+
+def decompress_bz2_file(source_file, dest_file):
+    """Decompress a .bz2 file."""
+    print(f"Decompressing {source_file}...")
+    with bz2.open(source_file, 'rb') as f_in:
+        with open(dest_file, 'wb') as f_out:
+            shutil.copyfileobj(f_in, f_out)
+    print(f"Decompressed to {dest_file}")
+
+def extract_datetime_from_filename(filename):
+    """
+    Extract datetime (UTC) from filename like:
+    YYYY_MM_DD_HH_MM_GMT.Forecast.h5.CWAM.h5.bz2
+    e.g., 2022_12_18_23_45_GMT -> 2022-12-18 23:45 UTC
+    """
+    pattern = re.compile(r"(\d{4})_(\d{2})_(\d{2})_(\d{2})_(\d{2})_GMT")
+    match = pattern.search(filename)
+    if match:
+        year, month, day, hour, minute = map(int, match.groups())
+        dt_utc = datetime(year, month, day, hour, minute, tzinfo=pytz.UTC)
+        return np.datetime64(dt_utc)
+    else:
+        return np.datetime64("NaT")
+
+def parse_cwam_file(h5_file_path, file_datetime):
+    """
+    Parse a single CWAM HDF5 file into a DataFrame.
+    We store:
+    - file datetime (UTC)
+    - forecast_offset_min (int)
+    - flight_level_ft (int)
+    - threshold_pct (int)
+    - centroid_lat, centroid_lon (float, one decimal place)
+    """
+    records = []
+    print(f"Parsing HDF5 file: {h5_file_path}")
+
+    with h5py.File(h5_file_path, 'r') as f:
+        for dev_key in f.keys():
+            if "Deviation Probability" in dev_key:
+                dev_group = f[dev_key]
+                for fcst_key in dev_group.keys():
+                    if fcst_key.startswith("FCST"):
+                        fcst_offset = int(re.findall(r"\d+", fcst_key)[0])
+                        fcst_group = dev_group[fcst_key]
+
+                        for flvl_key in fcst_group.keys():
+                            if flvl_key.startswith("FLVL"):
+                                flight_level = int(re.findall(r"\d+", flvl_key)[0]) * 100
+                                flvl_group = fcst_group[flvl_key]
+
+                                for contour_key in flvl_group.keys():
+                                    if "Contour" in contour_key:
+                                        contour_group = flvl_group[contour_key]
+
+                                        for trsh_key in contour_group.keys():
+                                            if trsh_key.startswith("TRSH"):
+                                                threshold = int(re.findall(r"\d+", trsh_key)[0])
+                                                trsh_group = contour_group[trsh_key]
+
+                                                for poly_key in trsh_group.keys():
+                                                    if poly_key.startswith("POLY"):
+                                                        poly_data = trsh_group[poly_key][:]
+                                                        coords = poly_data.reshape(-1, 2)
+                                                        if len(coords) > 0:
+                                                            # Compute centroid and round to one decimal place
+                                                            centroid_lat = coords[:,0].mean()
+                                                            centroid_lon = coords[:,1].mean()
+                                                            centroid_lat = np.float32(round(float(centroid_lat), 1))
+                                                            centroid_lon = np.float32(round(float(centroid_lon), 1))
+
+                                                            records.append((
+                                                                file_datetime,
+                                                                fcst_offset,
+                                                                flight_level,
+                                                                threshold,
+                                                                centroid_lat,
+                                                                centroid_lon
+                                                            ))
+    print(f"Finished parsing {h5_file_path}, found {len(records)} polygons.")
+    if records:
+        df = pd.DataFrame(records, columns=[
+            "datetime_utc", "forecast_offset_min",
+            "flight_level_ft", "threshold_pct",
+            "centroid_lat", "centroid_lon"
+        ])
+        # Optimize dtypes
+        df["forecast_offset_min"] = df["forecast_offset_min"].astype('int16')
+        df["flight_level_ft"] = df["flight_level_ft"].astype('int32')
+        df["threshold_pct"] = df["threshold_pct"].astype('int16')
+        # centroid_lat/lon are already float32
+        return df
+    else:
+        return pd.DataFrame(columns=[
+            "datetime_utc", "forecast_offset_min",
+            "flight_level_ft", "threshold_pct",
+            "centroid_lat", "centroid_lon"
+        ])
+
+def process_cwam_files(directory, output_directory):
+    """Process all CWAM bz2 compressed files in a directory."""
+    if not os.path.exists(output_directory):
+        os.makedirs(output_directory)
+
+    pattern = re.compile(r"\d{4}_\d{2}_\d{2}_\d{2}_\d{2}_GMT\.Forecast\.h5\.CWAM\.h5\.bz2$")
+    file_count = 0
+    for root, _, files in os.walk(directory):
+        for filename in files:
+            if pattern.match(filename):
+                source_file = os.path.join(root, filename)
+                temp_h5_file = source_file[:-4]  # remove '.bz2'
+
+                file_datetime = extract_datetime_from_filename(filename)
+                
+                decompress_bz2_file(source_file, temp_h5_file)
+                df = parse_cwam_file(temp_h5_file, file_datetime)
+                parquet_filename = os.path.basename(temp_h5_file).replace('.h5.CWAM.h5', '.parquet')
+                parquet_path = os.path.join(output_directory, parquet_filename)
+
+                if not df.empty:
+                    print(f"Writing {len(df)} records to {parquet_path}...")
+                    write(parquet_path, df, compression='brotli', write_index=False)
+                    print(f"Completed writing {parquet_path}")
+                else:
+                    print(f"No polygons found in {temp_h5_file}, skipping Parquet write.")
+
+                os.remove(temp_h5_file)
+                print(f"Cleaned up temporary file {temp_h5_file}")
+                file_count += 1
+
+    print(f"Processed {file_count} files in total.")
+
+def consolidate_parquet_files(output_directory, final_output_path):
+    """Consolidate all Parquet files into one final Parquet file."""
+    print("Consolidating all Parquet files...")
+    all_parquet = [os.path.join(output_directory, f) for f in os.listdir(output_directory) if f.endswith('.parquet')]
+    all_dfs = []
+    for pq in all_parquet:
+        size = os.path.getsize(pq)
+        if size > 0:
+            df = pd.read_parquet(pq)
+            if not df.empty:
+                all_dfs.append(df)
+                print(f"Loaded {len(df)} records from {pq}")
+            else:
+                print(f"{pq} is empty, skipping.")
+    if all_dfs:
+        final_df = pd.concat(all_dfs, ignore_index=True)
+        print(f"Concatenated {len(all_dfs)} DataFrames with total {len(final_df)} records.")
+        final_df.to_parquet(final_output_path, compression='brotli', index=False)
+        print(f"Consolidated all files into {final_output_path}")
+    else:
+        print("No parquet data found to consolidate.")
+
+if __name__ == "__main__":
+    cwam_directory = r'C:\Users\damol\OneDrive\Desktop\Verify\CWAM_Data\220901_220924\09\01'
+    output_dir = r'C:\Users\damol\OneDrive\Desktop\Verify\CWAM_Processed'
+    final_output = r'C:\Users\damol\OneDrive\Desktop\Verify\final_consolidated_cwam_data.parquet'
+
+    process_cwam_files(cwam_directory, output_dir)
+    consolidate_parquet_files(output_dir, final_output)
+    print("All done!")
