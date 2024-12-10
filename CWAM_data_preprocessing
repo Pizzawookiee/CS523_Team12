@@ -35,12 +35,6 @@ def extract_datetime_from_filename(filename):
 def parse_cwam_file(h5_file_path, file_datetime):
     """
     Parse a single CWAM HDF5 file into a DataFrame.
-    We store:
-    - file datetime (UTC)
-    - forecast_offset_min (int)
-    - flight_level_ft (int)
-    - threshold_pct (int)
-    - centroid_lat, centroid_lon (float, one decimal place)
     """
     records = []
     print(f"Parsing HDF5 file: {h5_file_path}")
@@ -71,40 +65,32 @@ def parse_cwam_file(h5_file_path, file_datetime):
                                                 for poly_key in trsh_group.keys():
                                                     if poly_key.startswith("POLY"):
                                                         poly_data = trsh_group[poly_key][:]
-                                                        coords = poly_data.reshape(-1, 2)
-                                                        if len(coords) > 0:
-                                                            # Compute centroid and round to one decimal place
-                                                            centroid_lat = coords[:,0].mean()
-                                                            centroid_lon = coords[:,1].mean()
-                                                            centroid_lat = np.float32(round(float(centroid_lat), 1))
-                                                            centroid_lon = np.float32(round(float(centroid_lon), 1))
+                                                        coords = poly_data.reshape(2, -1)
+                                                        latitudes = coords[0]
+                                                        longitudes = coords[1]
 
-                                                            records.append((
-                                                                file_datetime,
-                                                                fcst_offset,
-                                                                flight_level,
-                                                                threshold,
-                                                                centroid_lat,
-                                                                centroid_lon
-                                                            ))
+                                                        if len(latitudes) > 0 and len(longitudes) > 0:
+                                                            # Compute centroid
+                                                            centroid_lat = np.mean(latitudes)
+                                                            centroid_lon = np.mean(longitudes)
+
+                                                            records.append({
+                                                                "datetime_utc": file_datetime,
+                                                                "forecast_offset_min": fcst_offset,
+                                                                "flight_level_ft": flight_level,
+                                                                "threshold_pct": threshold,
+                                                                "polygon_id": poly_key,
+                                                                "centroid_lat": round(centroid_lat, 6),
+                                                                "centroid_lon": round(centroid_lon, 6)
+                                                            })
+
     print(f"Finished parsing {h5_file_path}, found {len(records)} polygons.")
     if records:
-        df = pd.DataFrame(records, columns=[
-            "datetime_utc", "forecast_offset_min",
-            "flight_level_ft", "threshold_pct",
-            "centroid_lat", "centroid_lon"
-        ])
-        # Optimize dtypes
-        df["forecast_offset_min"] = df["forecast_offset_min"].astype('int16')
-        df["flight_level_ft"] = df["flight_level_ft"].astype('int32')
-        df["threshold_pct"] = df["threshold_pct"].astype('int16')
-        # centroid_lat/lon are already float32
-        return df
+        return pd.DataFrame(records)
     else:
         return pd.DataFrame(columns=[
-            "datetime_utc", "forecast_offset_min",
-            "flight_level_ft", "threshold_pct",
-            "centroid_lat", "centroid_lon"
+            "datetime_utc", "forecast_offset_min", "flight_level_ft",
+            "threshold_pct", "polygon_id", "centroid_lat", "centroid_lon"
         ])
 
 def process_cwam_files(directory, output_directory):
@@ -121,8 +107,8 @@ def process_cwam_files(directory, output_directory):
                 temp_h5_file = source_file[:-4]  # remove '.bz2'
 
                 file_datetime = extract_datetime_from_filename(filename)
-                
                 decompress_bz2_file(source_file, temp_h5_file)
+                
                 df = parse_cwam_file(temp_h5_file, file_datetime)
                 parquet_filename = os.path.basename(temp_h5_file).replace('.h5.CWAM.h5', '.parquet')
                 parquet_path = os.path.join(output_directory, parquet_filename)
@@ -163,7 +149,7 @@ def consolidate_parquet_files(output_directory, final_output_path):
         print("No parquet data found to consolidate.")
 
 if __name__ == "__main__":
-    cwam_directory = r'C:\Users\damol\OneDrive\Desktop\Verify\CWAM_Data\220901_220924\09\01'
+    cwam_directory = r'C:\Users\damol\OneDrive\Desktop\Verify\CWAM_Data\220901_220924\12'
     output_dir = r'C:\Users\damol\OneDrive\Desktop\Verify\CWAM_Processed'
     final_output = r'C:\Users\damol\OneDrive\Desktop\Verify\final_consolidated_cwam_data.parquet'
 
