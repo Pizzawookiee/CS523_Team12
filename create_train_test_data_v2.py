@@ -123,7 +123,7 @@ def get_predictions_given_query_time(sub_df, query_time):
     #the sub_df is assumed to be already filtered for station_id
     #the sub_df may be from original, ammend or correct; further processing needs to be done
     
-    taf_test_df = sub_df #too lazy to fix variable names in this function
+    taf_test_df = sub_df 
     
     weather_vals = {
         'temperature':None,
@@ -396,7 +396,7 @@ def get_predictions_given_query_time_metar(sub_df, query_time): #if time allows,
     #the sub_df is assumed to be already filtered for station_id
     #the sub_df may be from original, ammend or correct; further processing needs to be done
     
-    taf_test_df = sub_df #too lazy to fix variable names in this function
+   
     
     weather_vals = {
         'temperature':None,
@@ -423,7 +423,7 @@ def get_predictions_given_query_time_metar(sub_df, query_time): #if time allows,
         'TCU_20000_35000':None,   
     }
 
-    if len(taf_test_df) == 0: #there might be an empty ammend/correction sub_df 
+    if len(sub_df) == 0: #there might be an empty ammend/correction sub_df 
         return weather_vals
     
     valid_rows = sub_df.copy() #avoids "A value is trying to be set on a copy of a slice from a DataFrame." warning
@@ -437,12 +437,10 @@ def get_predictions_given_query_time_metar(sub_df, query_time): #if time allows,
     #METAR records visibility in meters, while TAF uses U.S. statute miles truncated in range 1-6
     #therefore, convert meters to U.S. statute miles and truncate vals in [7,10] to 6
     
-    #valid_rows['visibility'] = np.float16(valid_rows['visibility'] // 1609.344)
-    #valid_rows.loc[valid_rows["visibility"].between(7, 10), "visibility"] = 6 #for some reason returns DataFrame has no attribute 'between' error
-
+   
     valid_rows['visibility'] = np.float16(np.where(valid_rows['visibility'] // 1609.344 >= 7, 6, valid_rows['visibility'] // 1609.344))
 
-    #travel up the rows
+    #travel up the rows, get the most recent value
     for idx in range(len(valid_rows) - 1, -1, -1):
         row = valid_rows.iloc[idx]
         
@@ -582,8 +580,7 @@ def process_metar_data_test(taf_dataset):
     df.rename(columns={'index': 'station_id'}, inplace=True)
     return df
     
-def process_metar_data_train(taf_dataset):
-    #input variable is named taf_dataset bc too lazy to switch all variable names
+def process_metar_data_train(dataset):
     
     #assuming right now that all taf_data goes to test
     airports = ['KDEN', 'KMEM', 'KORD', 'KSEA', 'KDFW', 'KPHX', 'KCLT', 'KATL', 'KMIA', 'KJFK']
@@ -591,7 +588,7 @@ def process_metar_data_train(taf_dataset):
     end_date = datetime.datetime(2023, 9, 1) + datetime.timedelta(hours = 23)
     results = OrderedDict({})
     
-    #populate results dict
+    #populate results dict so the keys match the 'ID' vals in submission
     
     
     def format_hour(dt):
@@ -630,7 +627,7 @@ def process_metar_data_train(taf_dataset):
     
     
     current_airport = ''
-    current_airport_subdf = taf_dataset
+    current_airport_subdf = dataset
     
     for k in results.keys():
         parts = k.split('_')
