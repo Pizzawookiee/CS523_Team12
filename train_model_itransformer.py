@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np
+
 from pathlib import Path
 #import matplotlib.pyplot as plt
 import datetime
@@ -12,6 +13,9 @@ import math
 
 from pathlib import Path
 
+import pytorch_lightning as pl
+
+import gluonts
 from gluonts.evaluation.backtest import make_evaluation_predictions
 from gluonts.dataset.multivariate_grouper import MultivariateGrouper
 from gluonts.evaluation import MultivariateEvaluator
@@ -65,14 +69,10 @@ with open('val_data_timeseries_gluonts.pkl', 'rb') as file:
 with open('test_data_timeseries_gluonts.pkl', 'rb') as file:
     test_data_timeseries = ListDataset(pickle.load(file), freq="15min")
 
-# Load test_data_target_airport
-with open('test_data_target_airport.pkl', 'rb') as file:
-    test_data_target_airport = pickle.load(file)
 
 # Load target_scalers
-with open('target_scalers.pkl', 'rb') as file:
+with open('target_scalers_gluonts.pkl', 'rb') as file:
     target_scalers = pickle.load(file)
-
 
         
 
@@ -117,7 +117,6 @@ for i in range(len(start_times)):
         airport_vals += [airport]
 
 
-#print(test_data_timeseries)
 grouper_train = MultivariateGrouper(max_target_dim=len(train_data_timeseries))
 train_data_timeseries = grouper_train(train_data_timeseries)
 grouper_val = MultivariateGrouper(max_target_dim=len(val_data_timeseries))
@@ -136,14 +135,18 @@ class RMSELoss(torch.nn.Module):
     def forward(self,yhat,y):
         return torch.sqrt(self.mse(yhat,y))
 
-
+#seeds for deterministic behavior
+np.random.seed(2024)
+pl.seed_everything(2024)
 
 estimator = ITransformerEstimator(
     prediction_length=12,
     context_length=4,
+    activation='relu',
     scaling="std",
     nonnegative_pred_samples=False,
-    trainer_kwargs=dict(max_epochs=25),
+    num_parallel_samples =100, 
+    trainer_kwargs=dict(max_epochs=1),
     
 )
 
@@ -161,9 +164,14 @@ evaluator = MultivariateEvaluator(
     quantiles=(np.arange(20) / 20.0)[1:], target_agg_funcs={"sum": np.sum}
 )
 
+
+
 forecast_it, ts_it = make_evaluation_predictions(
     dataset=test_data_timeseries, predictor=predictor, num_samples=100
 )
+
+
+'''
 
 forecasts = np.mean(list(forecast_it)[0].samples, axis=0).flatten()
 

@@ -381,7 +381,7 @@ def main():
             use_static_covariates = True,
             num_attention_heads=4,
             dropout=0.1,
-            batch_size=64,
+            batch_size=256,
             n_epochs=300,
             optimizer_cls = torch.optim.AdamW,
             optimizer_kwargs = {
@@ -488,9 +488,69 @@ def main():
         result = pd.merge(reference, submission, on='ID', how='left') 
 
         result.to_csv('submission.csv', index=False)
-    
+    '''
+    def objective(trial):
+        callback = [PyTorchLightningPruningCallback(trial, monitor="val_loss")]
 
-    
+        # set input_chunk_length, between 5 and 14 days
+        days_in = trial.suggest_int("days_in", 5, 14)
+        in_len = days_in * DAY_DURATION
+
+        # set out_len, between 1 and 13 days (it has to be strictly shorter than in_len).
+        days_out = trial.suggest_int("days_out", 1, days_in - 1)
+        out_len = days_out * DAY_DURATION
+
+        # Other hyperparameters
+        kernel_size = trial.suggest_int("hidden_size", 8, 128)
+        num_filters = trial.suggest_int("num_filters", 5, 25)
+        weight_norm = trial.suggest_categorical("weight_norm", [False, True])
+        dilation_base = trial.suggest_int("dilation_base", 2, 4)
+        dropout = trial.suggest_float("dropout", 0.0, 0.4)
+        lr = trial.suggest_float("lr", 5e-5, 1e-3, log=True)
+        include_dayofweek = trial.suggest_categorical("dayofweek", [False, True])
+
+        # build and train the TCN model with these hyper-parameters:
+        model_tft = TFTModel(
+            input_chunk_length=4,
+            output_chunk_length=12,
+            hidden_size=64,
+            lstm_layers=1,
+            use_static_covariates = True,
+            num_attention_heads=4,
+            dropout=0.1,
+            batch_size=256,
+            n_epochs=300,
+            optimizer_cls = torch.optim.AdamW,
+            optimizer_kwargs = {
+                "lr": 1e-3,
+            },
+
+            # learning rate scheduler
+            lr_scheduler_cls = torch.optim.lr_scheduler.ReduceLROnPlateau,
+            lr_scheduler_kwargs = {"patience": 5},
+            add_relative_index=True,
+            add_encoders = {
+                "cyclic": {
+                        "future": ["hour", "dayofweek", "month"],
+                        "past": ["hour", "dayofweek", "month"]
+                    },  # add cyclic time axis encodings as future covariates
+                'position': {'past': ['relative'], 'future': ['relative']},
+                'transformer': Scaler(),
+            },
+            likelihood=None,
+            loss_fn=RMSELoss(),
+            random_state=2024,
+            save_checkpoints = True,  # checkpoint to retrieve the best performing model state,
+            force_reset = True,
+        )
+
+        # Evaluate how good it is on the validation set
+        preds = model.predict(series=train, n=val_len)
+        smapes = smape(val, preds, n_jobs=-1, verbose=True)
+        smape_val = np.mean(smapes)
+
+        return smape_val if smape_val != np.nan else float("inf")
+    '''
     model = train()
     model = TFTModel.load_from_checkpoint(
             model_name="tft", best=True
